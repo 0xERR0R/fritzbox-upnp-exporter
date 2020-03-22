@@ -1,16 +1,26 @@
 package main
 
 import (
-	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
+	"errors"
+	"flag"
+	"os"
 )
 
 type Config struct {
-	URL string
+	URL      string
+	User     string
+	Password string
 }
 
 func parse(config *Config) error {
-	pflag.StringVar(&config.URL, "url", "fritz.box", "FritzBox URL")
-	pflag.Parse()
-	return viper.BindPFlags(pflag.CommandLine)
+	flag.StringVar(&config.URL, "url", "192.168.178.1", "FritzBox URL")
+	flag.StringVar(&config.User, "user", os.Getenv("FB_USERNAME"), "user name")
+	flag.StringVar(&config.Password, "password", os.Getenv("FB_PASSWORD"), "password")
+	flag.Parse()
+
+	if len(config.User) == 0 || len(config.Password) == 0 {
+		return errors.New("please enter user name / password")
+	}
+
+	return nil
 }
