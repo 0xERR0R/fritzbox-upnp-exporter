@@ -1,83 +1,16 @@
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
+	"fmt"
 	"strconv"
+	"strings"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
 )
 
 type FritzBoxCollector struct {
 	Config *Config
-}
-
-type Metric struct {
-	Name string
-	Desc *prometheus.Desc
-}
-
-var metrics = []Metric{
-	{
-		Name: "PhysicalLinkStatus",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_layer1_link_status",
-			"Status of physical link (Up = 1)",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "Layer1DownstreamMaxBitRate",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_layer1_downstream_max_bitrate",
-			"Layer1 downstream max bitrate",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "Layer1UpstreamMaxBitRate",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_layer1_upstream_max_bitrate",
-			"Layer1 upstream max bitrate",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "TotalBytesSent",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_bytes_sent",
-			"bytes sent on gateway WAN interface",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "TotalBytesReceived",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_bytes_received",
-			"bytes received on gateway WAN interface",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "TotalPacketsSent",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_packets_sent",
-			"packets sent on gateway WAN interface",
-			nil,
-			nil,
-		),
-	},
-	{
-		Name: "TotalPacketsReceived",
-		Desc: prometheus.NewDesc(
-			"fritzbox_wan_packets_received",
-			"packets received on gateway WAN interface",
-			nil,
-			nil,
-		),
-	},
 }
 
 func newFritzBoxCollector(config *Config) *FritzBoxCollector {
@@ -87,31 +20,104 @@ func newFritzBoxCollector(config *Config) *FritzBoxCollector {
 }
 
 func (collector *FritzBoxCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, metric := range metrics {
-		ch <- metric.Desc
+
+}
+
+func filterByService(in []serviceActionValue, service string, action string, variable string) string {
+	for _, a := range in {
+		if strings.Contains(a.serviceType, service) && a.actionName == action && a.variable == variable {
+			return a.value
+		}
 	}
+	log.Warnf("value for service %s, action %s, variable %s not found", service, action, variable)
+	return ""
+}
+
+func extract(val string) float64 {
+	if s, err := strconv.ParseFloat(val, 64); err == nil {
+		return s
+	}
+	return 0.0
 }
 
 func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
-	uPnPClient := NewUPnPClient(collector.Config.URL)
+	uPnPClient := NewUPnPClient(
+		collector.Config,
+		map[string][]string{
+			"WANCommonInterfaceConfig":   {"GetTotalBytesReceived", "GetTotalBytesSent"},
+			"WANPPPConnection":           {"GetExternalIPAddress", "GetStatusInfo"},
+			"LANEthernetInterfaceConfig": {"GetStatistics"},
+			"WLANConfiguration":          {"GetInfo", "GetTotalAssociations", "GetStatistics"},
+		},
+	)
 	values := uPnPClient.Execute()
 
-	extract := func(metric string) float64 {
-		for k, v := range values {
-			if k == metric {
-				if s, err := strconv.ParseFloat(v, 64); err == nil {
-					return s
-				} else {
-					if v == "Up" {
-						return 1.0
-					}
-				}
-			}
-		}
-		return 0.0
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_bytes_received",
+		"WAN total bytes received",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesReceived", "TotalBytesReceived")))
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_bytes_sent",
+		"WAN total bytes sent",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesSent", "TotalBytesSent")))
+
+	externalIP := filterByService(values, "WANPPPConnection", "GetExternalIPAddress", "ExternalIPAddress")
+	connectionStatus := filterByService(values, "WANPPPConnection", "GetStatusInfo", "ConnectionStatus")
+	uptime := filterByService(values, "WANPPPConnection", "GetStatusInfo", "Uptime")
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wanppp_status_uptime",
+		"WAN PPP uptime",
+		[]string{"ip", "status"},
+		nil,
+	), prometheus.CounterValue, extract(uptime), externalIP, connectionStatus)
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_lan_eth_total_bytes_received",
+		"LAN ethernet total bytes received",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.BytesReceived")))
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_lan_eth_total_bytes_sent",
+		"LAN ethernet total bytes sent",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.BytesSent")))
+
+	for i := 1; i <= 3; i++ {
+		wlanName := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "SSID")
+		wlanStandard := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "Standard")
+		wlanNameStandard := fmt.Sprintf("%s (%s)", wlanName, wlanStandard)
+		totalAssociations := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetTotalAssociations", "TotalAssociations")
+		totalPacketsSent := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsSent")
+		totalPacketsReceived := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsReceived")
+
+		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+			"fb_wlan_number_associations",
+			"Number of WLAN clients",
+			[]string{"ssid_standard"},
+			nil,
+		), prometheus.CounterValue, extract(totalAssociations), wlanNameStandard)
+
+		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+			"fb_wlan_total_packets_sent",
+			"WLAN total packets sent",
+			[]string{"ssid_standard"},
+			nil,
+		), prometheus.CounterValue, extract(totalPacketsSent), wlanNameStandard)
+
+		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+			"fb_wlan_total_packets_received",
+			"WLAN total packets received",
+			[]string{"ssid_standard"},
+			nil,
+		), prometheus.CounterValue, extract(totalPacketsReceived), wlanNameStandard)
 	}
 
-	for _, metric := range metrics {
-		ch <- prometheus.MustNewConstMetric(metric.Desc, prometheus.GaugeValue, extract(metric.Name))
-	}
 }

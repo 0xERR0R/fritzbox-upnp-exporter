@@ -3,19 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	log "github.com/sirupsen/logrus"
 )
 
 func main() {
-
 	var config Config
+
 	err := parse(&config)
 	if err != nil {
 		log.Fatalf("Could not parse config: %v\n", err)
@@ -27,12 +28,24 @@ func main() {
 
 	router := http.NewServeMux()
 	router.Handle("/metrics", promhttp.Handler())
+	router.HandleFunc("/all", func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Add("Content-Type", "text/plain")
+		uPnPClient := NewUPnPClient(
+			&config,
+			make(map[string][]string),
+		)
+		values := uPnPClient.Execute()
+		fmt.Fprintf(rw, "service:::action/variable    =    value")
+		for _, v := range values {
+			fmt.Fprintf(rw, "%s:::%s/%s   =   %s\n", v.serviceType, v.actionName, v.variable, v.value)
+		}
+	})
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%v", 8080),
 		Handler:      router,
 		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  15 * time.Second,
 	}
 
