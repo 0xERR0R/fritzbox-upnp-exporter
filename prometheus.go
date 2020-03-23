@@ -10,7 +10,9 @@ import (
 )
 
 type FritzBoxCollector struct {
-	Config *Config
+	Config                                               *Config
+	wanTotalBytesSentOffset, wanTotalBytesReceivedOffset float64
+	lastWanTotalBytesSent, lastWanTotalBytesReceived     float64
 }
 
 func newFritzBoxCollector(config *Config) *FritzBoxCollector {
@@ -52,19 +54,49 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 	)
 	values := uPnPClient.Execute()
 
+	wanTotalBytesReceived := extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesReceived", "TotalBytesReceived"))
+
+	if wanTotalBytesReceived < collector.lastWanTotalBytesReceived {
+		collector.wanTotalBytesReceivedOffset = wanTotalBytesReceived
+	}
+	wanTotalBytesReceivedCorrected := wanTotalBytesReceived - collector.wanTotalBytesReceivedOffset
+	collector.lastWanTotalBytesReceived = wanTotalBytesReceived
+
 	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
 		"fb_wan_total_bytes_received",
 		"WAN total bytes received",
 		nil,
 		nil,
-	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesReceived", "TotalBytesReceived")))
+	), prometheus.CounterValue, wanTotalBytesReceived)
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_bytes_received_corrected",
+		"WAN total bytes received corrected",
+		nil,
+		nil,
+	), prometheus.CounterValue, wanTotalBytesReceivedCorrected)
+
+	wanTotalBytesSent := extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesSent", "TotalBytesSent"))
+
+	if wanTotalBytesSent < collector.lastWanTotalBytesSent {
+		collector.wanTotalBytesSentOffset = wanTotalBytesSent
+	}
+	wanTotalBytesSentCorrected := wanTotalBytesSent - collector.wanTotalBytesSentOffset
+	collector.lastWanTotalBytesSent = wanTotalBytesSent
 
 	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
 		"fb_wan_total_bytes_sent",
 		"WAN total bytes sent",
 		nil,
 		nil,
-	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesSent", "TotalBytesSent")))
+	), prometheus.CounterValue, wanTotalBytesSent)
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_bytes_sent_corrected",
+		"WAN total bytes sent corrected",
+		nil,
+		nil,
+	), prometheus.CounterValue, wanTotalBytesSentCorrected)
 
 	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
 		"fb_wan_total_packets_received",
