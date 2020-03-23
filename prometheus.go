@@ -44,7 +44,7 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 	uPnPClient := NewUPnPClient(
 		collector.Config,
 		map[string][]string{
-			"WANCommonInterfaceConfig":   {"GetTotalBytesReceived", "GetTotalBytesSent"},
+			"WANCommonInterfaceConfig":   {"GetTotalBytesReceived", "GetTotalBytesSent", "GetTotalPacketsSent", "GetTotalPacketsReceived"},
 			"WANPPPConnection":           {"GetExternalIPAddress", "GetStatusInfo"},
 			"LANEthernetInterfaceConfig": {"GetStatistics"},
 			"WLANConfiguration":          {"GetInfo", "GetTotalAssociations", "GetStatistics"},
@@ -65,6 +65,20 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 		nil,
 		nil,
 	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalBytesSent", "TotalBytesSent")))
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_packets_received",
+		"WAN total packets received",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalPacketsReceived", "TotalPacketsReceived")))
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_wan_total_packets_sent",
+		"WAN total packets sent",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "WANCommonInterfaceConfig", "GetTotalPacketsSent", "TotalPacketsSent")))
 
 	externalIP := filterByService(values, "WANPPPConnection", "GetExternalIPAddress", "ExternalIPAddress")
 	connectionStatus := filterByService(values, "WANPPPConnection", "GetStatusInfo", "ConnectionStatus")
@@ -90,6 +104,20 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 		nil,
 	), prometheus.CounterValue, extract(filterByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.BytesSent")))
 
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_lan_eth_total_packets_received",
+		"LAN ethernet total packets received",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.PacketsReceived")))
+
+	ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+		"fb_lan_eth_total_packets_sent",
+		"LAN ethernet total packets sent",
+		nil,
+		nil,
+	), prometheus.CounterValue, extract(filterByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.PacketsSent")))
+
 	for i := 1; i <= 3; i++ {
 		wlanName := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "SSID")
 		wlanStandard := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "Standard")
@@ -103,7 +131,7 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 			"Number of WLAN clients",
 			[]string{"ssid_standard"},
 			nil,
-		), prometheus.CounterValue, extract(totalAssociations), wlanNameStandard)
+		), prometheus.GaugeValue, extract(totalAssociations), wlanNameStandard)
 
 		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
 			"fb_wlan_total_packets_sent",
