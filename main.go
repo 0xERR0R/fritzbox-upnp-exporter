@@ -69,7 +69,7 @@ func main() {
 
 	log.Info("Server is ready to handle requests at :", 8080)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Could not listen on %s: %v\n", 8080, err)
+		log.Fatalf("Could not listen on %d: %v\n", 8080, err)
 	}
 
 	<-done
