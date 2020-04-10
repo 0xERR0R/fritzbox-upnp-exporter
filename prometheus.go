@@ -33,7 +33,7 @@ func filterByService(in []serviceActionValue, service string, action string, var
 			return a.value
 		}
 	}
-	log.Warnf("value for service %s, action %s, variable %s not found", service, action, variable)
+	log.Debugf("value for service %s, action %s, variable %s not found", service, action, variable)
 	return ""
 }
 
@@ -146,7 +146,7 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 		nil,
 	), prometheus.CounterValue, collector.filterConvertAndCorrectByService(values, "LANEthernetInterfaceConfig", "GetStatistics", "Stats.PacketsSent"))
 
-	for i := 1; i <= 3; i++ {
+	for i := 1; i <= 4; i++ {
 		wlanName := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "SSID")
 		wlanStandard := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "Standard")
 		wlanNameStandard := fmt.Sprintf("%d:%s (%s)", i, wlanName, wlanStandard)
@@ -154,26 +154,28 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 		totalPacketsSent := collector.filterConvertAndCorrectByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsSent")
 		totalPacketsReceived := collector.filterConvertAndCorrectByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsReceived")
 
-		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
-			"fb_wlan_number_associations",
-			"Number of WLAN clients",
-			[]string{"ssid_standard"},
-			nil,
-		), prometheus.GaugeValue, totalAssociations, wlanNameStandard)
+		if len(wlanName) > 0 {
+			ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+				"fb_wlan_number_associations",
+				"Number of WLAN clients",
+				[]string{"ssid_standard"},
+				nil,
+			), prometheus.GaugeValue, totalAssociations, wlanNameStandard)
 
-		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
-			"fb_wlan_total_packets_sent",
-			"WLAN total packets sent",
-			[]string{"ssid_standard"},
-			nil,
-		), prometheus.CounterValue, totalPacketsSent, wlanNameStandard)
+			ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+				"fb_wlan_total_packets_sent",
+				"WLAN total packets sent",
+				[]string{"ssid_standard"},
+				nil,
+			), prometheus.CounterValue, totalPacketsSent, wlanNameStandard)
 
-		ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
-			"fb_wlan_total_packets_received",
-			"WLAN total packets received",
-			[]string{"ssid_standard"},
-			nil,
-		), prometheus.CounterValue, totalPacketsReceived, wlanNameStandard)
+			ch <- prometheus.MustNewConstMetric(prometheus.NewDesc(
+				"fb_wlan_total_packets_received",
+				"WLAN total packets received",
+				[]string{"ssid_standard"},
+				nil,
+			), prometheus.CounterValue, totalPacketsReceived, wlanNameStandard)
+		}
 	}
 
 }
