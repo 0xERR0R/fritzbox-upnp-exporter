@@ -149,7 +149,7 @@ func (collector *FritzBoxCollector) Collect(ch chan<- prometheus.Metric) {
 	for i := 1; i <= 3; i++ {
 		wlanName := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "SSID")
 		wlanStandard := filterByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetInfo", "Standard")
-		wlanNameStandard := fmt.Sprintf("%s (%s)", wlanName, wlanStandard)
+		wlanNameStandard := fmt.Sprintf("%d:%s (%s)", i, wlanName, wlanStandard)
 		totalAssociations := filterConvertByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetTotalAssociations", "TotalAssociations")
 		totalPacketsSent := collector.filterConvertAndCorrectByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsSent")
 		totalPacketsReceived := collector.filterConvertAndCorrectByService(values, fmt.Sprintf("WLANConfiguration:%d", i), "GetStatistics", "TotalPacketsReceived")
