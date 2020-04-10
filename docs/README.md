@@ -51,5 +51,5 @@ services:
 ```
 
 ## Grafana dashboard
-Blocky can export metrics for prometheus. Example grafana dashboard definition [as JSON](grafana.json)
+Example grafana dashboard definition [as JSON](grafana.json)
 ![grafana-dashboard](grafana-dashboard.png). 
